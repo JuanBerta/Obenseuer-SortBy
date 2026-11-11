@@ -24,7 +24,7 @@ namespace SortByMod
 	public class SortByPlugin : BaseUnityPlugin
 	{
 		public const string Guid = "com.juanberta.obenseuer.sortby";
-		public const string Version = "1.0.0";
+		public const string Version = "1.0.1";
 
 		internal static SortByPlugin Instance;
 		internal static ManualLogSource Log;
@@ -253,7 +253,7 @@ namespace SortByMod
 		private bool storage;
 		private Vector2 at;
 		private int openedFrame;
-		private EventSystem pausedEvents;
+		private BaseInputModule pausedInput;
 		private GUIStyle panel, title, item, itemOn, small;
 
 		internal static void Open(bool storage)
@@ -264,14 +264,16 @@ namespace SortByMod
 			instance.at = new Vector2(m.x, Screen.height - m.y);
 			instance.openedFrame = Time.frameCount;
 			SortByPlugin.MenuOpen = true;
-			// Clicks on the menu must not reach the inventory slots underneath.
-			if (EventSystem.current != null && EventSystem.current.enabled) { instance.pausedEvents = EventSystem.current; instance.pausedEvents.enabled = false; }
+			// Clicks on the menu must not reach the inventory slots underneath. Only the input module is paused:
+			// the EventSystem itself stays, because the game's inventory navigation raycasts through it every frame.
+			BaseInputModule input = EventSystem.current != null ? EventSystem.current.currentInputModule : null;
+			if (input != null && input.enabled) { instance.pausedInput = input; input.enabled = false; }
 		}
 
 		private void Close()
 		{
 			SortByPlugin.MenuOpen = false;
-			if (pausedEvents != null) { pausedEvents.enabled = true; pausedEvents = null; }
+			if (pausedInput != null) { pausedInput.enabled = true; pausedInput = null; }
 		}
 
 		private void Awake() { instance = this; }
