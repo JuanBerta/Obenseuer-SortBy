@@ -1,0 +1,64 @@
+=== NAME ===
+Sort By
+
+=== SHORT DESCRIPTION (summary) ===
+Sort your inventory, the bank, the backpack or any storage by value, name, amount, quality or freshness, with hotkeys to sort without clicking. Fast even on a huge multi-page bank.
+
+=== FILE DESCRIPTION ===
+Obenseuer-SortBy-v1.0.2.rar : Sort By 1.0.2 for BepInEx 6. Extract into the Obenseuer folder.
+
+=== CHANGELOG (Nexus "Changelogs" tab) ===
+1.0.2
+- Sorting a big storage (a multi-page bank) no longer freezes the game.
+1.0.1
+- Fixed an error spam from the game's inventory navigation while the Sort by menu was open.
+1.0.0
+- First release: Sort by menu and sort hotkeys.
+
+=== FULL DESCRIPTION (BBCode) ===
+[size=5][b]Sort By[/b][/size]
+[i]Choose how your inventory and storages are sorted, and sort them with a key press.[/i]
+
+[size=4][b]Features[/b][/size]
+[list]
+[*][b]Sort by menu[/b]: the round [b]Sort[/b] buttons (your inventory, and any open storage: bank, backpack, containers) open a small menu:
+[list]
+[*]Category (the game's own order)
+[*]Name
+[*]Value (each)
+[*]Value (stack) - price x amount
+[*]Amount
+[*]Quality
+[*]Freshness
+[*]Reverse order
+[/list]
+Pick one and it sorts right away. Your choice is remembered.
+[*][b]Hotkeys[/b] while the inventory is open:
+[list]
+[*][b]U[/b]: sort your inventory
+[*][b]Y[/b]: sort the storage under the mouse (your inventory, the bank, the backpack, a container...)
+[/list]
+[*][b]Fast on big storages[/b]: the game's sort gets slow on a bank with hundreds of slots. Storages with 100+ slots use a faster routine with the same order and the same stack merging, so there's no freeze.
+[*]Equipment slots are never sorted. Sorting uses the game's own item handling, so stacks, liquids, quality and freshness are kept.
+[/list]
+
+[size=4][b]Configuration[/b][/size]
+[code]BepInEx\config\com.juanberta.obenseuer.sortby.cfg[/code]
+[list]
+[*][b]Sorting[/b]: SortBy, Reverse, SortButtonOpensMenu (off = the Sort buttons sort right away with your order), FastSortFromSlots
+[*][b]Keys[/b]: SortInventoryKey (U), SortHoveredKey (Y)
+[/list]
+
+[size=4][b]Compatibility[/b][/size]
+[list]
+[*]Works with [b]Bank Inventory[/b]: sort the whole bank (all pages) from its Sort button or with Y.
+[*]Safe to add or remove at any time; it doesn't touch your save.
+[/list]
+
+[size=4][b]Installation[/b][/size]
+[list=1]
+[*]Install [b]BepInEx 6[/b] (x64).
+[*]Extract the archive into your Obenseuer folder (where Obenseuer.exe is).
+[/list]
+
+[url=https://github.com/JuanBerta/Obenseuer-SortBy]Source on GitHub[/url]
