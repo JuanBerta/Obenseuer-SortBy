@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.2
+- Sorting a big storage (a multi-page bank) no longer freezes the game: storages with 100+ slots use a faster routine that places each stack once (same order and stack merging as the game). Config: [Sorting] FastSortFromSlots.
+
 ## 1.0.1
 - Fixed NullReferenceException spam from the game's inventory navigation while the Sort by menu was open.
 

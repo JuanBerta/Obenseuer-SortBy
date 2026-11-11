@@ -8,6 +8,7 @@ using BepInEx.Logging;
 using BepInEx.Unity.Mono;
 using BepInEx.Unity.Mono.Configuration;
 using HarmonyLib;
+using OS.Items;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -24,7 +25,7 @@ namespace SortByMod
 	public class SortByPlugin : BaseUnityPlugin
 	{
 		public const string Guid = "com.juanberta.obenseuer.sortby";
-		public const string Version = "1.0.1";
+		public const string Version = "1.0.2";
 
 		internal static SortByPlugin Instance;
 		internal static ManualLogSource Log;
@@ -33,6 +34,7 @@ namespace SortByMod
 		internal static ConfigEntry<bool> ReplaceButton;
 		internal static ConfigEntry<KeyboardShortcut> InventoryKey;
 		internal static ConfigEntry<KeyboardShortcut> HoveredKey;
+		internal static ConfigEntry<int> FastThreshold;
 
 		internal static bool Bypass;      // our own call into the game's Sort: don't open the menu
 		internal static bool MenuOpen;
@@ -51,9 +53,12 @@ namespace SortByMod
 			HoveredKey = Config.Bind("Keys", "SortHoveredKey", new KeyboardShortcut(KeyCode.Y),
 				"While the inventory is open: sort the storage under the mouse (your inventory, the bank, the backpack, a container...).");
 
+			FastThreshold = Config.Bind("Sorting", "FastSortFromSlots", 100,
+				"Storages with at least this many slots (the bank, big containers) are sorted with a faster routine that places every stack once, instead of the game's one that searches the whole storage for each stack (which freezes the game for a moment on a multi-page bank). 0 = always use the game's routine.");
 			try
 			{
 				var h = new Harmony(Guid);
+				h.Patch(AccessTools.Method(typeof(Inventory), "SortSlots"), prefix: new HarmonyMethod(typeof(FastSort), nameof(FastSort.Prefix)));
 				MethodInfo cmp = AccessTools.Method(typeof(Inventory), "CompareSortKeys");
 				if (cmp != null) h.Patch(cmp, prefix: new HarmonyMethod(typeof(Order), nameof(Order.Prefix)));
 				else Logger.LogWarning("Inventory.CompareSortKeys not found: custom orders won't apply.");
@@ -343,6 +348,112 @@ namespace SortByMod
 			bool rev = SortByPlugin.Reverse.Value;
 			if (GUI.Button(new Rect(box.x + 6f, y, w - 12f, rowH), (rev ? "[x] " : "[  ] ") + "Reverse order", small))
 				SortByPlugin.Reverse.Value = !rev;
+		}
+	}
+
+	/// <summary>
+	/// The game's sort removes every stack and re-adds each one by scanning the storage from the first slot
+	/// (and refreshing slots along the way), which gets slow on a bank with hundreds of slots. This does the
+	/// same thing - same sort keys and order, same stack merging through the game's own add - but places each
+	/// stack once, in order, and refreshes every slot a single time at the end.
+	/// </summary>
+	internal static class FastSort
+	{
+		private static MethodInfo getKey, compare;
+		private static FieldInfo keyStack;
+
+		internal static bool Prefix(Inventory __instance, SlotController[] slotToSort)
+		{
+			SlotController[] slots = slotToSort ?? __instance.Slots;
+			int threshold = SortByPlugin.FastThreshold.Value;
+			if (threshold <= 0 || slots == null || slots.Length < threshold) return true;
+			try { Run(__instance, slots); return false; }
+			catch (Exception e) { SortByPlugin.Log.LogWarning("Fast sort failed, using the game's sort: " + e.Message); return true; }
+		}
+
+		private static void Run(Inventory inv, SlotController[] slots)
+		{
+			if (getKey == null)
+			{
+				getKey = AccessTools.Method(typeof(Inventory), "GetSortKey");
+				compare = AccessTools.Method(typeof(Inventory), "CompareSortKeys");
+				if (getKey == null || compare == null) throw new Exception("sort methods not found");
+			}
+
+			// 1) Take every stack out (without refreshing each slot).
+			var stacks = new List<ItemStack>();
+			foreach (SlotController sc in slots)
+			{
+				ItemStack st = sc != null ? sc.itemStack : null;
+				if (st == null || st.itemId < 0 || st.itemAmount <= 0) continue;
+				if (st.itemReference == null) st.SetItemReference();
+				if (st.itemReference == null) continue;
+				stacks.Add(st.CopyItemStack());
+				st.DragItemFromPanel(st);
+			}
+
+			// 2) Sort with the game's keys and comparison (which Sort By's chosen order also applies to).
+			List<ItemStack> sorted;
+			try
+			{
+				var keys = new List<object>(stacks.Count);
+				foreach (ItemStack st in stacks) keys.Add(getKey.Invoke(inv, new object[] { st }));
+				if (keyStack == null && keys.Count > 0) keyStack = AccessTools.Field(keys[0].GetType(), "stack");
+				var args = new object[2];
+				keys.Sort((a, b) => { args[0] = a; args[1] = b; return (int)compare.Invoke(null, args); });
+				sorted = keys.Select(k => (ItemStack)keyStack.GetValue(k)).ToList();
+			}
+			catch (Exception e)
+			{
+				SortByPlugin.Log.LogWarning("Sorting keys failed, keeping the old order: " + e.Message);
+				sorted = stacks;
+			}
+
+			// 3) Put them back in order, topping up the previous stack of the same item first.
+			int next = 0;
+			SlotController last = null;
+			foreach (ItemStack st in sorted)
+			{
+				if (st.itemAmount == 0 || st.itemId < 0 || st.itemReference == null) continue;
+				ItemLiquidData liquid = st.GetMetaOfType<ItemLiquidData>();
+				if (liquid != null && ItemLiquidData.IsSameAs(liquid.GetLiquidAmount(st.itemAmount), 0f))
+				{
+					liquid.liquidItem = null;
+					liquid.liquidItemMeta = new object[0];
+				}
+				Item item = st.itemReference.Item;
+				object[] meta = st.Meta;
+				int amount = st.itemAmount;
+				int rem;
+				if (last != null && last.itemStack.itemId == st.itemId && last.itemStack.ownerId == st.ownerId)
+				{
+					if (last.itemStack.AddItemToPanel(ref item, out rem, ref meta, amount, 0, st.ownerId, false)) amount = Mathf.Max(0, rem);
+				}
+				while (amount > 0)
+				{
+					while (next < slots.Length && slots[next] != null && slots[next].itemStack != null
+					       && slots[next].itemStack.itemId >= 0 && slots[next].itemStack.itemAmount > 0) next++;
+					if (next >= slots.Length) break;
+					SlotController target = slots[next];
+					if (target == null || target.itemStack == null) { next++; continue; }
+					if (target.itemStack.AddItemToPanel(ref item, out rem, ref meta, amount, 0, st.ownerId, false) && rem < amount)
+					{
+						amount = Mathf.Max(0, rem);
+						last = target;
+					}
+					else next++;   // this slot won't take it (category rules): try the next one
+				}
+				if (amount > 0)
+				{
+					// Out of room (shouldn't happen: everything came from these slots). Let the game place the rest.
+					var restStack = st.CopyItemStack();
+					restStack.itemAmount = amount;
+					ItemOperations.AddItems(restStack, slots.First(), notify: false, ignoreCrime: true);
+				}
+			}
+
+			// 4) Refresh each slot once.
+			foreach (SlotController sc in slots) if (sc != null && sc.slot != null) sc.slot.UpdateSlot();
 		}
 	}
 
